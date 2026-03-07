@@ -132,8 +132,18 @@ class Config:
             "cloud_model": "gpt-4o-mini",
             "anonymous_id": str(uuid.uuid4()),
             "storage_path": "",
+            "mic_device_name": "",
             "version": "1.0"
         }
+
+    def get_mic_device_name(self) -> str:
+        """Get the saved microphone device name. Empty string means system default."""
+        return self._config.get("mic_device_name", "")
+
+    def set_mic_device_name(self, name: str) -> bool:
+        """Set the preferred microphone device name."""
+        self._config["mic_device_name"] = name.strip()
+        return self._save()
 
     def get_storage_path(self) -> str:
         """Get the custom storage path. Empty string means use default."""

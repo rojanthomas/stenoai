@@ -31,12 +31,13 @@ atexit.register(cleanup_sounddevice)
 
 
 class AudioRecorder:
-    def __init__(self, sample_rate: int = 44100, channels: int = 1):
+    def __init__(self, sample_rate: int = 44100, channels: int = 1, device: Optional[int] = None):
         if not AUDIO_AVAILABLE:
             raise ImportError("Audio dependencies not available. Please install sounddevice and numpy.")
 
         self.sample_rate = sample_rate
         self.channels = channels
+        self.device = device
         self.recording = False
         self.paused = False
         self.audio_data = []
@@ -139,6 +140,7 @@ class AudioRecorder:
             stream = sd.InputStream(
                 samplerate=self.sample_rate,
                 channels=self.channels,
+                device=self.device,
                 callback=self._audio_callback,
                 blocksize=1024
             )

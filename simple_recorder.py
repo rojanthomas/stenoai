@@ -45,12 +45,31 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+def _resolve_mic_device():
+    """Resolve saved mic device name to a sounddevice index. Returns None for default."""
+    try:
+        from src.config import get_config
+        import sounddevice as sd
+        name = get_config().get_mic_device_name()
+        if not name:
+            return None
+        devices = sd.query_devices()
+        for i, dev in enumerate(devices):
+            if dev['max_input_channels'] > 0 and dev['name'] == name:
+                return i
+        logger.warning(f"Saved mic device '{name}' not found, using system default")
+    except Exception as e:
+        logger.warning(f"Could not resolve mic device: {e}")
+    return None
+
+
 class SimpleRecorder:
     """Simple audio recorder and transcriber."""
-    
+
     def __init__(self):
         # Only initialize if dependencies are available
-        self.audio_recorder = AudioRecorder() if AudioRecorder else None
+        device = _resolve_mic_device() if AudioRecorder else None
+        self.audio_recorder = AudioRecorder(device=device) if AudioRecorder else None
 
         # Only initialize transcriber/summarizer when needed to save memory
         self.transcriber = None
@@ -1428,6 +1447,54 @@ def set_system_audio(enabled):
         print(json.dumps({"success": True, "system_audio_enabled": enabled}))
     else:
         print(f"ERROR: Failed to save system audio preference")
+        print(json.dumps({"success": False, "error": "Failed to save config"}))
+
+
+@cli.command()
+def list_audio_devices():
+    """List available audio input devices as JSON"""
+    try:
+        import sounddevice as sd
+        devices = sd.query_devices()
+        default_input = sd.default.device[0]
+        input_devices = []
+        for i, dev in enumerate(devices):
+            if dev['max_input_channels'] > 0:
+                input_devices.append({
+                    "name": dev['name'],
+                    "index": i,
+                    "is_default": i == default_input
+                })
+        print(json.dumps({"success": True, "devices": input_devices}))
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e), "devices": []}))
+
+
+@cli.command()
+def get_mic_device():
+    """Get the saved microphone device preference"""
+    from src.config import get_config
+
+    config = get_config()
+    name = config.get_mic_device_name()
+
+    print(json.dumps({"success": True, "mic_device_name": name}))
+
+
+@cli.command()
+@click.argument('name')
+def set_mic_device(name):
+    """Set the preferred microphone device by name"""
+    from src.config import get_config
+
+    config = get_config()
+    # Empty string or "default" resets to system default
+    device_name = "" if name.lower() == "default" else name
+    success = config.set_mic_device_name(device_name)
+
+    if success:
+        print(json.dumps({"success": True, "mic_device_name": device_name}))
+    else:
         print(json.dumps({"success": False, "error": "Failed to save config"}))
 
 

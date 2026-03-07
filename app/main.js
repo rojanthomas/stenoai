@@ -2214,6 +2214,44 @@ ipcMain.handle('set-system-audio', async (event, enabled) => {
   }
 });
 
+// Microphone device IPC handlers
+ipcMain.handle('list-audio-devices', async () => {
+  try {
+    const result = await runPythonScript('simple_recorder.py', ['list-audio-devices'], true);
+    const jsonData = JSON.parse(result);
+    return jsonData;
+  } catch (error) {
+    sendDebugLog(`Error listing audio devices: ${error.message}`);
+    return { success: false, error: error.message, devices: [] };
+  }
+});
+
+ipcMain.handle('get-mic-device', async () => {
+  try {
+    const result = await runPythonScript('simple_recorder.py', ['get-mic-device'], true);
+    const jsonData = JSON.parse(result);
+    return jsonData;
+  } catch (error) {
+    sendDebugLog(`Error getting mic device: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('set-mic-device', async (event, deviceName) => {
+  try {
+    sendDebugLog(`Setting mic device to: ${deviceName}`);
+    const result = await runPythonScript('simple_recorder.py', ['set-mic-device', deviceName || 'default']);
+    const jsonMatch = result.match(/\{.*\}/s);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    return { success: true, mic_device_name: deviceName };
+  } catch (error) {
+    sendDebugLog(`Error setting mic device: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+});
+
 // Language IPC handlers
 ipcMain.handle('get-language', async () => {
   try {

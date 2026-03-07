@@ -3832,6 +3832,16 @@ Commands and output will appear here...
 
                     <div class="settings-row">
                         <div class="settings-row-text">
+                            <span>Microphone</span>
+                            <small>Select which audio input device to use</small>
+                        </div>
+                        <select class="theme-select" id="mic-device-select">
+                            <option value="">System Default</option>
+                        </select>
+                    </div>
+
+                    <div class="settings-row">
+                        <div class="settings-row-text">
                             <span>Record system audio</span>
                             <small>Capture audio from virtual meetings (requires macOS 12.3+)</small>
                         </div>
@@ -5155,8 +5165,22 @@ Session started - waiting for activity...
                 // Get loopback (system audio) stream
                 loopbackStream = await getLoopbackAudioMediaStream();
 
-                // Get microphone stream
-                micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                // Get microphone stream (use selected device if configured)
+                let micConstraints = { audio: true };
+                try {
+                    const savedResult = await ipcRenderer.invoke('get-mic-device');
+                    if (savedResult.success && savedResult.mic_device_name) {
+                        const webDevices = await navigator.mediaDevices.enumerateDevices();
+                        const match = webDevices.find(d =>
+                            d.kind === 'audioinput' && d.label.includes(savedResult.mic_device_name));
+                        if (match) {
+                            micConstraints = { audio: { deviceId: { exact: match.deviceId } } };
+                        }
+                    }
+                } catch (err) {
+                    console.warn('Could not resolve mic device preference, using default:', err);
+                }
+                micStream = await navigator.mediaDevices.getUserMedia(micConstraints);
 
                 _systemAudioStreams = [loopbackStream, micStream];
 
@@ -5911,6 +5935,9 @@ Session started - waiting for activity...
                     ),
                     loadSystemAudioSettings().catch(err =>
                         log(`System audio settings load failed: ${err.message}`)
+                    ),
+                    loadMicDeviceSettings().catch(err =>
+                        log(`Mic device settings load failed: ${err.message}`)
                     ),
                     loadLanguageSettings().catch(err =>
                         log(`Language settings load failed: ${err.message}`)
@@ -6927,6 +6954,9 @@ Session started - waiting for activity...
                 settingsBody.classList.remove('developer-active');
             }
             // Load tab-specific data
+            if (tabName === 'general') {
+                loadMicDeviceSettings();
+            }
             if (tabName === 'ai') {
                 loadAIProviderSettings();
                 if (currentAIProvider !== 'cloud') {
@@ -7523,6 +7553,47 @@ Session started - waiting for activity...
             }
         }
 
+        async function loadMicDeviceSettings() {
+            const select = document.getElementById('mic-device-select');
+            if (!select) return;
+
+            try {
+                const [devicesResult, savedResult] = await Promise.all([
+                    ipcRenderer.invoke('list-audio-devices'),
+                    ipcRenderer.invoke('get-mic-device')
+                ]);
+
+                // Rebuild options
+                select.innerHTML = '<option value="">System Default</option>';
+
+                if (devicesResult.success && devicesResult.devices) {
+                    for (const dev of devicesResult.devices) {
+                        const opt = document.createElement('option');
+                        opt.value = dev.name;
+                        opt.textContent = dev.name + (dev.is_default ? ' (default)' : '');
+                        select.appendChild(opt);
+                    }
+                }
+
+                // Restore saved selection
+                const savedName = savedResult.success ? savedResult.mic_device_name : '';
+                if (savedName) {
+                    const match = Array.from(select.options).find(o => o.value === savedName);
+                    if (match) {
+                        select.value = savedName;
+                    } else {
+                        // Saved device not found — reset to default
+                        select.value = '';
+                        await ipcRenderer.invoke('set-mic-device', '');
+                    }
+                } else {
+                    select.value = '';
+                }
+            } catch (error) {
+                console.error('Error loading mic device settings:', error);
+            }
+        }
+
         async function loadLanguageSettings() {
             try {
                 const result = await ipcRenderer.invoke('get-language');
@@ -7618,6 +7689,27 @@ Session started - waiting for activity...
                         console.error('Error saving notification setting:', error);
                         showModelNotification('Failed to save setting', 'error');
                         e.target.checked = !e.target.checked;
+                    }
+                });
+            }
+
+            const micDeviceSelect = document.getElementById('mic-device-select');
+            if (micDeviceSelect) {
+                micDeviceSelect.addEventListener('change', async (e) => {
+                    try {
+                        const result = await ipcRenderer.invoke('set-mic-device', e.target.value);
+                        if (result.success) {
+                            showModelNotification(
+                                e.target.value ? `Microphone set to ${e.target.value}` : 'Using system default microphone',
+                                'success'
+                            );
+                        } else {
+                            console.error('Failed to save mic device:', result.error);
+                            showModelNotification('Failed to save setting', 'error');
+                        }
+                    } catch (error) {
+                        console.error('Error saving mic device:', error);
+                        showModelNotification('Failed to save setting', 'error');
                     }
                 });
             }
